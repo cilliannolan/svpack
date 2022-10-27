@@ -426,55 +426,7 @@ def consequence_main(args):
 
     serialnumber = 0
     # TODO
-    for Avar in Avcf:
-        if "SVTYPE" in Avar.info: # Annotate SVs with consequence
-            # Add genes that start before the current variant ends to the active heap.
-            while len(genes) and (genes[0].chrom,genes[0].start) <= (Avar.chrom,Avar.stop):
-                gene = genes.popleft()
-                heapq.heappush(activefeature, ((gene.chrom,gene.end,serialnumber), gene)) #TODO
-                serialnumber += 1
-            # Pop genes that end before the current variant starts
-            # and so can not overlap `Avar` or any later variants.
-            while len(activegenes) and activegenes[0][0] < (Avar.chrom,Avar.start):
-                heapq.heappop(activegenes)
-
-            # Deletion, insertion, inversion, duplication, and CNV variants
-            # impact a gene if an exon of the gene falls between the start
-            # and end of the variant.
-            consequences = []
-            svtype = Avar.info["SVTYPE"]
-            chromStart = Avar.start
-            chromEnd = Avar.stop
-            for k,gene in activegenes:
-                transcripts = set()
-                # Check if SV span overlaps the gene body.
-                if gene.chrom == Avar.chrom and min(chromEnd, gene.end) > max(chromStart, gene.start):
-                    cds = False
-                    utr = False
-                    # Check if SV span overlaps any exon of the gene.
-                    for transcript in gene.transcripts:
-                        for exon in transcript.exons:
-                            if min(chromEnd, exon.end) > max(chromStart, exon.start):
-                                if exon.type == "CDS":
-                                    cds = True
-                                else:
-                                    utr = True
-
-                    # Add only one consequence entry per gene, prioritizing CDS > UTR > INTRON.
-                    if svtype == "BND":
-                        # Breakend disrupts a gene if it lies anywhere in the gene body.
-                        csq = "bnd"
-                    else:
-                        csq = "cds" if cds else "utr" if utr else "intron"
-
-                    consequences.append(Consequence("sv:" + csq, gene.symbol, "", gene.attributes.get("biotype",""), gene.strand, "", ""))
-
-        if consequences:
-            Avar.info["BCSQ"] = ",".join([str(c) for c in consequences])
-            outvcf.write("%s" % (Avar))
-        elif not args.require_csq:
-            outvcf.write("%s" % (Avar))
-
+    annotate_sv_with_consequence()
     Avcf.close()
     outvcf.close()
 
@@ -482,31 +434,33 @@ def consequence_main(args):
 def annotate_sv_with_consequence(
     args, Avar, activefeatures, serialnumber, features, genes
     ):
-    if "SVTYPE" in Avar.info: # Annotate SVs with consequence
+    for Avar in Avcf:
+        if "SVTYPE" in Avar.info: # Annotate SVs with consequence
             # Add genes that start before the current variant ends to the active heap.
-        while len(features) and (features[0].chrom,features[0].start) <= (Avar.chrom,Avar.stop):
-            feature = features.popleft()
-            heapq.heappush(activefeatures, ((feature.chrom,feature.end,serialnumber), feature)) #TODO
-            serialnumber += 1
+            while len(features) and (features[0].chrom,features[0].start) <= (Avar.chrom,Avar.stop):
+                feature = features.popleft()
+                heapq.heappush(activefeatures, ((feature.chrom,feature.end,serialnumber), feature)) #TODO
+                serialnumber += 1
         # Pop genes that end before the current variant starts
         # and so can not overlap `Avar` or any later variants.
-        while len(activefeatures) and activefeatures[0][0] < (Avar.chrom,Avar.start):
-            heapq.heappop(activefeatures)
+            while len(activefeatures) and activefeatures[0][0] < (Avar.chrom,Avar.start):
+                heapq.heappop(activefeatures)
 
-        if feature is "gene": # TODO
-            gene_consequence()
-        else:
-            reg_elem_consequence()
+            if feature is "gene": # TODO
+                gene_consequence()
+            else:
+                reg_elem_consequence()
+        if consequences:
+            Avar.info["BCSQ"] = ",".join([str(c) for c in consequences])
+            outvcf.write("%s" % (Avar))
+        elif not args.require_csq:
+            outvcf.write("%s" % (Avar))
 
 
 def gene_consequence():
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
-    consequences = []
-    svtype = Avar.info["SVTYPE"]
-    chromStart = Avar.start
-    chromEnd = Avar.stop
     for k,gene in activegenes:
         transcripts = set()
             # Check if SV span overlaps the gene body.
@@ -529,7 +483,10 @@ def gene_consequence():
             else:
                 csq = "cds" if cds else "utr" if utr else "intron"
 
-            consequences.append(Consequence("sv:" + csq, gene.symbol, "", gene.attributes.get("biotype",""), gene.strand, "", ""))
+            consequences.append(
+                Consequence("sv:" + csq, gene.symbol, "",
+                gene.attributes.get("biotype",""), gene.strand, "", "")
+                )
 
         if consequences:
             Avar.info["BCSQ"] = ",".join([str(c) for c in consequences])
@@ -542,10 +499,6 @@ def reg_elem_consequence(Avar, activefeature=active_reg_elem, gene):
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
-    consequences = []
-    svtype = Avar.info["SVTYPE"]
-    chromStart = Avar.start
-    chromEnd = Avar.stop
     for k,reg_elem in active_reg_elem:
         # Check if SV span overlaps the regulatory element
         if reg_elem.chrom == Avar.chrom and 
