@@ -171,7 +171,9 @@ def filter_main(args):
 
 def match_main(args):
     Avcf = VariantFileStream(pysam.VariantFile(args.a_vcf), is_sorted=False)
-    Bvcf_windower = VariantFileWindower(VariantFileStream(pysam.VariantFile(args.b_vcf), is_sorted=False))
+    Bvcf_windower = VariantFileWindower(
+        VariantFileStream(pysam.VariantFile(args.b_vcf), is_sorted=False)
+        )
 
     # Define INFO fields from Bvcf that will be applied to records in Avcf
     if args.info is None:
@@ -345,9 +347,7 @@ class Gff:
                 except KeyError:
                     self.symbol = self.attributes["gene_id"]
             elif self.feature is "promoter":
-                try:
-                    self.symbol = next_gene_gff(
-                        self.source, self.chrom, self.start, self.end)
+                    self.symbol = None
 
 
     def __init__(self, gff_file):
@@ -426,20 +426,24 @@ def consequence_main(args):
 
     serialnumber = 0
     # TODO
-    annotate_sv_with_consequence()
+    annotate_sv_with_consequence(args, Avcf, gene_gff, reg_elem_gff)
     Avcf.close()
     outvcf.close()
 
 
 def annotate_sv_with_consequence(
-    args, Avar, activefeatures, serialnumber, features, genes
+    args, Avar, activefeatures, serialnumber, features, genes, genes_gff, reg_elem_gff
     ):
     for Avar in Avcf:
         if "SVTYPE" in Avar.info: # Annotate SVs with consequence
             # Add genes that start before the current variant ends to the active heap.
-            while len(features) and (features[0].chrom,features[0].start) <= (Avar.chrom,Avar.stop):
+            while len(features) and 
+            features[0].chrom,features[0].start <= (Avar.chrom,Avar.stop):
                 feature = features.popleft()
-                heapq.heappush(activefeatures, ((feature.chrom,feature.end,serialnumber), feature)) #TODO
+                heapq.heappush(
+                    activefeatures,
+                    ((feature.chrom,feature.end,serialnumber), feature)
+                    ) #TODO
                 serialnumber += 1
         # Pop genes that end before the current variant starts
         # and so can not overlap `Avar` or any later variants.
@@ -449,15 +453,10 @@ def annotate_sv_with_consequence(
             if feature is "gene": # TODO
                 gene_consequence()
             else:
-                reg_elem_consequence()
-        if consequences:
-            Avar.info["BCSQ"] = ",".join([str(c) for c in consequences])
-            outvcf.write("%s" % (Avar))
-        elif not args.require_csq:
-            outvcf.write("%s" % (Avar))
+                reg_elem_consequence() # TODO
 
 
-def gene_consequence():
+def gene_consequence(Avar, activefeatures=activegenes):
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
@@ -495,7 +494,7 @@ def gene_consequence():
             outvcf.write("%s" % (Avar))
 
 
-def reg_elem_consequence(Avar, activefeature=active_reg_elem, gene):
+def reg_elem_consequence(Avar, activefeature=active_reg_elem, gene_gff):
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
@@ -507,8 +506,10 @@ def reg_elem_consequence(Avar, activefeature=active_reg_elem, gene):
             utr = False
             # Get gene relevant to regulatory element
             if feature == "enhancer":
-                symbol = reg_elem.gene_id_field
+                symbol = reg_elem.gene
             else:
+                # pos < gene.start [0] 
+                # Need to sort by distance? or pre-sorted?
                 symbol = next_gene_gff(source, chrom, start, end)
 
             # Add only one consequence entry per gene, 
