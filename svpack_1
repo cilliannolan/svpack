@@ -347,7 +347,10 @@ class Gff:
                 except KeyError:
                     self.symbol = self.attributes["gene_id"]
             elif self.feature is "promoter":
-                    self.symbol = None
+                    self.symbol = None 
+                    # TODO better to do this upfront
+                    # Get gene for each promoter by finding next gene
+                    # Do classes have access to objects?
 
 
     def __init__(self, gff_file):
@@ -381,12 +384,14 @@ class Gff:
         f.close()
 
         # Link exons to transcripts
-        for exon in exons:
-            if exon.transcript in transcripts:
-                transcripts[exon.transcript].add_exon(exon)
+        if exons is not None:
+            for exon in exons:
+                if exon.transcript in transcripts:
+                    transcripts[exon.transcript].add_exon(exon)
         # Link transcripts to genes
-        for transcript in transcripts.values():
-            genes[transcript.gene].add_transcript(transcript)
+        if transcripts is not None:
+            for transcript in transcripts.values():
+                genes[transcript.gene].add_transcript(transcript)
 
         # TODO
         # Provide genes sorted by (chrom,start,end)
@@ -395,6 +400,14 @@ class Gff:
         self.genes_by_chrom = collections.defaultdict(list)
         for gene in self.genes:
             self.genes_by_chrom[gene.chrom].append(gene)
+
+        #if all(
+        #    feature in ["promoter", "enhancer"] for feature in self.feature
+        #    ):
+        #    self.features = list(sorted(features.values(), key=lambda x: (x.chrom,x.start,x.end)))
+        #    self.features_by_chrom = collections.defaultdict(list)
+        #    for feature in self.features:
+        #        self.features_by_chrom[feature.chrom].append(feature)
 
 
 class Consequence:
@@ -437,8 +450,7 @@ def annotate_sv_with_consequence(
     for Avar in Avcf:
         if "SVTYPE" in Avar.info: # Annotate SVs with consequence
             # Add genes that start before the current variant ends to the active heap.
-            while len(features) and 
-            features[0].chrom,features[0].start <= (Avar.chrom,Avar.stop):
+            while len(features) and (features[0].chrom,features[0].start) <= (Avar.chrom,Avar.stop):
                 feature = features.popleft()
                 heapq.heappush(
                     activefeatures,
@@ -451,12 +463,12 @@ def annotate_sv_with_consequence(
                 heapq.heappop(activefeatures)
 
             if feature is "gene": # TODO
-                gene_consequence()
+                gene_consequence(Avar, activefeatures)
             else:
-                reg_elem_consequence() # TODO
+                reg_elem_consequence(Avar, gene_gff, activefeatures) # TODO
 
 
-def gene_consequence(Avar, activefeatures=activegenes):
+def gene_consequence(Avar, activefeatures):
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
@@ -494,24 +506,26 @@ def gene_consequence(Avar, activefeatures=activegenes):
             outvcf.write("%s" % (Avar))
 
 
-def reg_elem_consequence(Avar, activefeature=active_reg_elem, gene_gff):
+def reg_elem_consequence(Avar, gene_gff, activefeatures):
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
-    for k,reg_elem in active_reg_elem:
+    for k,reg_elem in activefeatures:
         # Check if SV span overlaps the regulatory element
-        if reg_elem.chrom == Avar.chrom and 
-            min(chromEnd, reg_elem.end) > max(chromStart, reg_elem.start):
+        if reg_elem.chrom == Avar.chrom and min(chromEnd, reg_elem.end) > max(chromStart, reg_elem.start):
             cds = False
             utr = False
             # Get gene relevant to regulatory element
             if feature == "enhancer":
                 symbol = reg_elem.gene
             else:
-                # pos < gene.start [0] 
+                # pos < gene.start [0]
+                print(gene_gff)
+                raise SystemExit
                 # Need to sort by distance? or pre-sorted?
-                symbol = next_gene_gff(source, chrom, start, end)
+                #symbol = next_gene_gff(source, chrom, start, end)
 
+            # TODO: make this a function
             # Add only one consequence entry per gene, 
             # prioritizing CDS > UTR > INTRON.
             if svtype == "BND":
@@ -597,9 +611,8 @@ consequence_parser.add_argument("genes_gff", metavar="genes.gff")
 consequence_parser.add_argument("--require-csq", action="store_true", help="Only retain variants with a consequence annotation")
 # TODO: test
 consequence_parser.add_argument(
-    "--reg-elems",
-    nargs=1,
-    type=argparse.Filetype('r'),
+    "reg_elems",
+    metavar="reg_elems.gff",
     help="Annotate consequences of SVs for regulatory elements, provide gff containing regulatory elements"
     )
 consequence_parser.set_defaults(func=consequence_main)
