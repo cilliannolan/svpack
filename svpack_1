@@ -424,13 +424,14 @@ class Consequence:
 def consequence_main(args):
     print("Reading Gene_gff")
     gene_gff = Gff(args.genes_gff)
-    #print(gene_gff.__dict__)
     if args.reg_elems is not None:
         print("Reading reg_elem_gff")
         reg_elem_gff = Gff(args.reg_elems)
-        #print(reg_elem_gff.__dict__)
         print("Making reg elems into deque")
         features = collections.deque(reg_elem_gff.reg_elems)
+        genes = collections.deque(gene_gff.genes)
+        print(len(genes))
+        print(len(features))
     else:
         features = collections.deque(gene_gff.genes)
     activefeatures = [] # Heap sorted by (chrom,chromEnd) of genes that might overlap a variant
@@ -442,14 +443,14 @@ def consequence_main(args):
     serialnumber = 0
     # TODO
     annotate_sv_with_consequence(
-        args, Avcf, activefeatures, serialnumber, features, gene_gff, reg_elem_gff
+        args, Avcf, activefeatures, serialnumber, features, genes
         )
     Avcf.close()
     outvcf.close()
 
 
 def annotate_sv_with_consequence(
-    args, Avcf, activefeatures, serialnumber, features, genes_gff, reg_elem_gff
+    args, Avcf, activefeatures, serialnumber, features, genes
     ):
     for Avar in Avcf:
         if "SVTYPE" in Avar.info: # Annotate SVs with consequence
@@ -466,7 +467,7 @@ def annotate_sv_with_consequence(
             while len(activefeatures) and activefeatures[0][0] < (Avar.chrom,Avar.start):
                 heapq.heappop(activefeatures)
             if args.reg_elems is not None:
-                reg_elem_consequence(Avar, genes_gff, activefeatures) 
+                reg_elem_consequence(Avar, activefeatures, genes) 
             else:
                 gene_consequence(Avar, activefeatures)
 
@@ -511,7 +512,7 @@ def gene_consequence(Avar, activegenes):
             outvcf.write("%s" % (Avar))
 
 
-def reg_elem_consequence(Avar, gene_gff, activefeatures):
+def reg_elem_consequence(Avar, activefeatures, genes):
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
@@ -525,10 +526,17 @@ def reg_elem_consequence(Avar, gene_gff, activefeatures):
             # Get gene relevant to regulatory element
             if reg_elem.feature == "enhancer":
                 symbol = reg_elem.gene
-                print(symbol)# debugging
             else:
+                print(len(genes))
+                while len(genes) and (genes[0].chrom,genes[0].start) < (Avar.chrom,Avar.start):
+                    genes = genes.popleft()
+                    print(genes.id[0])
+                # Get next gene following feature
+                # method 1: Get all genes downstream of feature on same chrom
+                #   Then get first in that list (pre-sorted)
+
                 # pos < gene.start [0]
-                print(gene_gff)
+                #print(genes[0][0])
                 raise SystemExit
                 # Need to sort by distance? or pre-sorted?
                 #symbol = next_gene_gff(source, chrom, start, end)
