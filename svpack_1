@@ -532,20 +532,10 @@ def reg_elem_consequence(Avar, activefeatures, genes):
                     gene = genes.popleft()
                     if gene.start > reg_elem.end:
                         downstream_genes_found += 1
-                        print(f"promoter is {reg_elem.id}; {reg_elem.start} {reg_elem.end}")
-                        print(f"genes found counter = {downstream_genes_found}")
-                        print(f"Gene is: {gene.id}; {gene.chrom} {gene.start}")
-                    #for gene in (gene for gene in genes if (gene.chrom == reg_elem.chrom and gene.start >= reg_elem.start)):
-                        
-                    #for gene in (gene for gene in genes if (gene.chrom == reg_elem.chrom and gene.start >= reg_elem.start)):
-                        #print(f"Reg elem is: {reg_elem.id}; {reg_elem.chrom} {reg_elem.start}")
-                        #print(f"Variant starts at: {Avar.chrom} {Avar.start}")
-                        
-                # Get next gene following feature
-                # method 1: Get all genes downstream of feature on same chrom
-                #   Then get first in that list (pre-sorted)
-
-
+                        symbol = gene.id
+                        #print(f"promoter is {reg_elem.id}; {reg_elem.start} {reg_elem.end}")
+                        #print(f"genes found counter = {downstream_genes_found}")
+                        #print(f"Gene is: {gene.id}; {gene.chrom} {gene.start}")
             # TODO: make this a function
             # Add only one consequence entry per gene, 
             # prioritizing CDS > UTR > INTRON.
@@ -555,9 +545,9 @@ def reg_elem_consequence(Avar, activefeatures, genes):
             else:
                 csq = "cds" if cds else "utr" if utr else "intron"
 
+            biotype = gene.attributes.get("biotype","")
             consequences.append(
-                Consequence("sv:" + csq, gene.symbol, "",
-                gene.attributes.get("biotype",""), gene.strand, "", "")
+                Consequence("sv:{reg_elem.feature}, {csq}, {symbol}, {svtype}")
                 )
 
         if consequences:
