@@ -420,6 +420,18 @@ class Consequence:
     def __str__(self):
         return "|".join([self.consequence, self.gene, self.transcript, self.biotype, self.strand, self.amino_acid_change, self.dna_change])
 
+class Reg_elem_consequence:
+    def __init__(self, consequence, gene, biotype, svtype, amino_acid_change, dna_change):
+        self.consequence = consequence
+        self.gene = gene
+        self.biotype = biotype
+        self.svtype = svtype
+        self.amino_acid_change = amino_acid_change
+        self.dna_change = dna_change
+
+    def __str__(self):
+        return "|".join([self.consequence, self.gene, self.biotype, self.svtype, self.amino_acid_change, self.dna_change])
+
 
 def consequence_main(args):
     gene_gff = Gff(args.genes_gff)
@@ -438,14 +450,14 @@ def consequence_main(args):
     serialnumber = 0
     # TODO
     annotate_sv_with_consequence(
-        args, Avcf, activefeatures, serialnumber, features, genes
+        args, Avcf, activefeatures, serialnumber, features, genes, outvcf
         )
     Avcf.close()
     outvcf.close()
 
 
 def annotate_sv_with_consequence(
-    args, Avcf, activefeatures, serialnumber, features, genes
+    args, Avcf, activefeatures, serialnumber, features, genes, outvcf
     ):
     consequences = []
     for Avar in Avcf:
@@ -462,13 +474,19 @@ def annotate_sv_with_consequence(
         # and so can not overlap `Avar` or any later variants.
             while len(activefeatures) and activefeatures[0][0] < (Avar.chrom,Avar.start):
                 heapq.heappop(activefeatures)
+            svtype = Avar.info["SVTYPE"]
             if args.reg_elems is not None:
-                reg_elem_consequence(Avar, activefeatures, genes) 
+                reg_elem_consequence(Avar, activefeatures, genes, svtype, consequences, outvcf) 
             else:
-                gene_consequence(Avar, activefeatures)
+                gene_consequence(Avar, activefeatures, svtype, consequences, outvcf)
+        if consequences:
+            Avar.info["BCSQ"] = ",".join([str(c) for c in consequences])
+            outvcf.write("%s" % (Avar))
+        elif not args.require_csq:
+            outvcf.write("%s" % (Avar))
 
 
-def gene_consequence(Avar, activegenes):
+def gene_consequence(Avar, activegenes, svtype, consequences, outvcf):
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
@@ -501,14 +519,8 @@ def gene_consequence(Avar, activegenes):
                 gene.attributes.get("biotype",""), gene.strand, "", "")
                 )
 
-        if consequences:
-            Avar.info["BCSQ"] = ",".join([str(c) for c in consequences])
-            outvcf.write("%s" % (Avar))
-        elif not args.require_csq:
-            outvcf.write("%s" % (Avar))
 
-
-def reg_elem_consequence(Avar, activefeatures, genes):
+def reg_elem_consequence(Avar, activefeatures, genes, svtype, consequences, outvcf):
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
@@ -532,28 +544,21 @@ def reg_elem_consequence(Avar, activefeatures, genes):
                     if gene.start > reg_elem.end:
                         downstream_genes_found += 1
                         symbol = gene.id
-                        #print(f"promoter is {reg_elem.id}; {reg_elem.start} {reg_elem.end}")
-                        #print(f"genes found counter = {downstream_genes_found}")
-                        #print(f"Gene is: {gene.id}; {gene.chrom} {gene.start}")
-            # TODO: make this a function
-            # Add only one consequence entry per gene, 
+
+            # Add only one consequence entry per regulatory element
+            # Uses the biotype of the linked gene
             # prioritizing CDS > UTR > INTRON.
-            if svtype == "BND":
-                # Breakend disrupts a gene if it lies anywhere in the gene body.
-                csq = "bnd"
-            else:
-                csq = "cds" if cds else "utr" if utr else "intron"
-
+            # 
             biotype = gene.attributes.get("biotype","")
-            consequences.append(
-                Consequence("sv:{reg_elem.feature}, {csq}, {symbol}, {svtype}")
-                )
 
-        if consequences:
-            Avar.info["BCSQ"] = ",".join([str(c) for c in consequences])
-            outvcf.write("%s" % (Avar))
-        elif not args.require_csq:
-            outvcf.write("%s" % (Avar))
+            if biotype == "protein_coding":
+                csq = "protein_coding_gene"
+            else:
+                csq = "non_protein_coding_gene"
+
+            consequences.append(
+                Reg_elem_consequence("sv:" + reg_elem.feature  + ":" + csq, symbol, biotype, svtype, "", "")
+                )
 
 
 def tag_zygosity_main(args):
@@ -583,12 +588,6 @@ def tag_zygosity_main(args):
 
     invcf.close()
     outvcf.close()
-
-# TODO
-def next_gene_gff(source, chromosome, start, end):
-    "Get next gene from a promoter provided in a gff"
-
-
 
 # Define usage for command and subcommands
 parser = argparse.ArgumentParser(description="Structural variant analysis tools",
