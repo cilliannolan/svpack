@@ -343,6 +343,7 @@ class Gff:
             self.reg_elem_id = "%s:%s-%s_%s" % (self.chrom, self.start, self.end, self.feature)
             self.id = self.attributes["ID"].split(":")[1]
             if self.feature == "enhancer":
+                #TODO
                 try:
                     self.symbol = self.attributes["Name"]
                 except KeyError:
@@ -421,16 +422,15 @@ class Consequence:
         return "|".join([self.consequence, self.gene, self.transcript, self.biotype, self.strand, self.amino_acid_change, self.dna_change])
 
 class Reg_elem_consequence:
-    def __init__(self, consequence, gene, biotype, svtype, amino_acid_change, dna_change):
+    def __init__(self, consequence, gene, reg_elem_id, biotype, svtype):
         self.consequence = consequence
         self.gene = gene
+        self.reg_elem_id = reg_elem_id
         self.biotype = biotype
         self.svtype = svtype
-        self.amino_acid_change = amino_acid_change
-        self.dna_change = dna_change
 
     def __str__(self):
-        return "|".join([self.consequence, self.gene, self.biotype, self.svtype, self.amino_acid_change, self.dna_change])
+        return "|".join([self.consequence, self.gene, self.reg_elem_id, self.biotype, self.svtype])
 
 
 def consequence_main(args):
@@ -459,8 +459,8 @@ def consequence_main(args):
 def annotate_sv_with_consequence(
     args, Avcf, activefeatures, serialnumber, features, genes, outvcf
     ):
-    consequences = []
     for Avar in Avcf:
+        consequences = []
         if "SVTYPE" in Avar.info: # Annotate SVs with consequence
             # Add genes that start before the current variant ends to the active heap.
             while len(features) and (features[0].chrom,features[0].start) <= (Avar.chrom,Avar.stop):
@@ -468,7 +468,7 @@ def annotate_sv_with_consequence(
                 heapq.heappush(
                     activefeatures,
                     ((feature.chrom,feature.end,serialnumber), feature)
-                    ) #TODO
+                    )
                 serialnumber += 1
         # Pop genes that end before the current variant starts
         # and so can not overlap `Avar` or any later variants.
@@ -524,6 +524,8 @@ def reg_elem_consequence(Avar, activefeatures, genes, svtype, consequences, outv
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
+    biotype = ""
+    symbol = ""
     for k,reg_elem in activefeatures:
         chromStart = Avar.start
         chromEnd = Avar.stop
@@ -532,32 +534,29 @@ def reg_elem_consequence(Avar, activefeatures, genes, svtype, consequences, outv
             # Get gene relevant to regulatory element
             if reg_elem.feature == "enhancer":
                 symbol = reg_elem.gene
-            else:
-                #genes[0].chrom == reg_elem.chrom and genes[0].start > reg_elem.end:
-                #    gene = genes.popleft()
-                #    print(gene.chrom, gene.start)
-                    #heapq.heappush(activegenes, ((gene.chrom,gene.end,serialnumber), gene))
-
+            elif reg_elem.feature == "promoter":
                 downstream_genes_found = 0
                 while len(genes) and genes[0].chrom == reg_elem.chrom and downstream_genes_found == 0:
                     gene = genes.popleft()
-                    if gene.start > reg_elem.end:
+                    if gene.start > reg_elem.start:
                         downstream_genes_found += 1
-                        symbol = gene.id
+                        symbol = gene.symbol
+                        biotype = gene.attributes.get("biotype","")
+            else:
+                print("Reg elem is not promoter or enhancer. Exiting")
+                raise SystemExit
 
             # Add only one consequence entry per regulatory element
             # Uses the biotype of the linked gene
             # prioritizing CDS > UTR > INTRON.
-            # 
-            biotype = gene.attributes.get("biotype","")
-
+            #
             if biotype == "protein_coding":
                 csq = "protein_coding_gene"
             else:
                 csq = "non_protein_coding_gene"
 
             consequences.append(
-                Reg_elem_consequence("sv:" + reg_elem.feature  + ":" + csq, symbol, biotype, svtype, "", "")
+                Reg_elem_consequence("sv:" + reg_elem.feature  + ":" + csq, symbol, reg_elem.id, biotype, svtype)
                 )
 
 
