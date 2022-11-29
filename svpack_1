@@ -536,10 +536,14 @@ def reg_elem_consequence(Avar, activefeatures, genes, svtype, consequences, outv
                 symbol = reg_elem.gene
             elif reg_elem.feature == "promoter":
                 downstream_genes_found = 0
-                while len(genes) and genes[0].chrom == reg_elem.chrom and downstream_genes_found == 0:
+                while len(genes) and genes[0].chrom == reg_elem.chrom and downstrand_genes_found == 0:
                     gene = genes.popleft()
-                    if gene.start > reg_elem.start:
-                        downstream_genes_found += 1
+                    if gene.strand == "+" and gene.start > reg_elem.start:
+                        downstrand_genes_found += 1
+                        symbol = gene.symbol
+                        biotype = gene.attributes.get("biotype","")
+                    else if gene.strand == "-" and gene.end < reg_elem.end:
+                        downstrand_genes_found += 1
                         symbol = gene.symbol
                         biotype = gene.attributes.get("biotype","")
             else:
