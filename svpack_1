@@ -422,15 +422,16 @@ class Consequence:
         return "|".join([self.consequence, self.gene, self.transcript, self.biotype, self.strand, self.amino_acid_change, self.dna_change])
 
 class Reg_elem_consequence:
-    def __init__(self, consequence, gene, reg_elem_id, biotype, svtype):
+    def __init__(self, consequence, gene, reg_elem_id, biotype, svtype, strand):
         self.consequence = consequence
         self.gene = gene
         self.reg_elem_id = reg_elem_id
         self.biotype = biotype
         self.svtype = svtype
+        self.strand = strand
 
     def __str__(self):
-        return "|".join([self.consequence, self.gene, self.reg_elem_id, self.biotype, self.svtype])
+        return "|".join([self.consequence, self.gene, self.reg_elem_id, self.biotype, self.svtype, self.strand])
 
 
 def consequence_main(args):
@@ -524,28 +525,47 @@ def reg_elem_consequence(Avar, activefeatures, genes, svtype, consequences, outv
     # Deletion, insertion, inversion, duplication, and CNV variants
     # impact a gene if an exon of the gene falls between the start
     # and end of the variant.
-    biotype = ""
-    symbol = ""
+    #biotype = ""
+    #symbol = ""
+    #strand = ""
     for k,reg_elem in activefeatures:
+        #print(reg_elem.id)
         chromStart = Avar.start
         chromEnd = Avar.stop
+        biotype = ""
+        symbol = ""
+        strand = ""
         # Check if SV span overlaps the regulatory element
         if reg_elem.chrom == Avar.chrom and min(chromEnd, reg_elem.end) > max(chromStart, reg_elem.start):
             # Get gene relevant to regulatory element
             if reg_elem.feature == "enhancer":
                 symbol = reg_elem.gene
             elif reg_elem.feature == "promoter":
-                downstream_genes_found = 0
+                downstrand_genes_found = 0
+                if genes[0].chrom != reg_elem.chrom:
+                    genes.popleft()
                 while len(genes) and genes[0].chrom == reg_elem.chrom and downstrand_genes_found == 0:
                     gene = genes.popleft()
-                    if gene.strand == "+" and gene.start > reg_elem.start:
+                    #print("Popped gene: " + gene.symbol + "; Gene start position: " + str(gene.start) + "; Gene strand " + str(gene.strand) + "; Promoter start position: " + str(reg_elem.start))
+                    if gene.strand == "+" and (0 < int(gene.start) - int(reg_elem.start) < 5000):
+                        #print("Downstream Selected: " + gene.symbol)
                         downstrand_genes_found += 1
                         symbol = gene.symbol
                         biotype = gene.attributes.get("biotype","")
-                    else if gene.strand == "-" and gene.end < reg_elem.end:
+                        strand = gene.strand
+                    elif gene.strand == "-" and (0 < int(reg_elem.end) - int(gene.end) < 5000):
+                        #print("Upstream Selected: " + gene.symbol + ", gene start position: " + str(gene.start))
                         downstrand_genes_found += 1
                         symbol = gene.symbol
                         biotype = gene.attributes.get("biotype","")
+                        strand = gene.strand
+                    elif gene.start > reg_elem.end:
+                        #print("No linked gene found for this promoter: annotating as such")
+                        downstrand_genes_found += 1
+                        symbol = "NA"
+                        biotype = "NA"
+                        strand = "NA"
+                        genes.appendleft(gene)
             else:
                 print("Reg elem is not promoter or enhancer. Exiting")
                 raise SystemExit
@@ -556,11 +576,13 @@ def reg_elem_consequence(Avar, activefeatures, genes, svtype, consequences, outv
             #
             if biotype == "protein_coding":
                 csq = "protein_coding_gene"
+            elif biotype == "NA":
+                csq = "linked_gene_not_found"
             else:
-                csq = "non_protein_coding_gene"
+                csq = "non_protein_coding"
 
             consequences.append(
-                Reg_elem_consequence("sv:" + reg_elem.feature  + ":" + csq, symbol, reg_elem.id, biotype, svtype)
+                Reg_elem_consequence("sv:" + reg_elem.feature  + ":" + csq, symbol, reg_elem.id, biotype, svtype, strand)
                 )
 
 
