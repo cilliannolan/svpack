@@ -449,7 +449,6 @@ def consequence_main(args):
     outvcf.write("%s" % (Avcf.header))
 
     serialnumber = 0
-    # TODO
     annotate_sv_with_consequence(
         args, Avcf, activefeatures, serialnumber, features, genes, outvcf
         )
@@ -542,25 +541,34 @@ def reg_elem_consequence(Avar, activefeatures, genes, svtype, consequences, outv
                 symbol = reg_elem.gene
             elif reg_elem.feature == "promoter":
                 downstrand_genes_found = 0
-                if genes[0].chrom != reg_elem.chrom:
-                    genes.popleft()
-                while len(genes) and genes[0].chrom == reg_elem.chrom and downstrand_genes_found == 0:
+                #while len(genes) and genes[0].chrom == reg_elem.chrom and downstrand_genes_found == 0:
+                while len(genes) and downstrand_genes_found == 0:
                     gene = genes.popleft()
-                    #print("Popped gene: " + gene.symbol + "; Gene start position: " + str(gene.start) + "; Gene strand " + str(gene.strand) + "; Promoter start position: " + str(reg_elem.start))
-                    if gene.strand == "+" and (0 < int(gene.start) - int(reg_elem.start) < 5000):
-                        #print("Downstream Selected: " + gene.symbol)
+                    # If genes are not on the correct chromosome discard them
+                    # This is to take care of genes at the end of a chromosome
+                    # after all promoters on that chromosome have been run through
+                    if gene.chrom != reg_elem.chrom:
+                        continue
+                    # Forward strand genes require promoter on 5' end
+                    elif gene.strand == "+" and (0 < int(gene.start) - int(reg_elem.start) < 5000):
                         downstrand_genes_found += 1
                         symbol = gene.symbol
                         biotype = gene.attributes.get("biotype","")
                         strand = gene.strand
+                    # Reverse strand gene requires promoter on 3' end 
                     elif gene.strand == "-" and (0 < int(reg_elem.end) - int(gene.end) < 5000):
-                        #print("Upstream Selected: " + gene.symbol + ", gene start position: " + str(gene.start))
                         downstrand_genes_found += 1
                         symbol = gene.symbol
                         biotype = gene.attributes.get("biotype","")
                         strand = gene.strand
-                    elif gene.start > reg_elem.end:
-                        #print("No linked gene found for this promoter: annotating as such")
+                    # If genes are not on the correct chromosome discard them
+                    # This is to take care of genes at the end of a chromosome
+                    # after all chromosome promoters have been run through
+                    elif gene.chrom != reg_elem.chrom:
+                        continue
+                    # If the gene starts after the end of the promoter annotate the
+                    # variant with no promoter fitting our requirements
+                    elif gene.chrom == reg_elem.chrom and gene.start > reg_elem.end:
                         downstrand_genes_found += 1
                         symbol = "NA"
                         biotype = "NA"
